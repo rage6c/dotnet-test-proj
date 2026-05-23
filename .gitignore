@@ -1,0 +1,6 @@
+bin/
+obj/
+*.duckdb
+*.duckdb.wal
+work/
+parquet-output/
