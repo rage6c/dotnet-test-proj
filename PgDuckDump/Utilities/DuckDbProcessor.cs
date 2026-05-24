@@ -9,7 +9,7 @@ public sealed class DuckDbProcessor(
     IOptions<PostgresOptions> postgresOptions,
     IOptions<DuckDbOptions> duckDbOptions,
     IOptions<DumpOptions> dumpOptions,
-    ILogger<DuckDbProcessor> logger) : IDisposable, IAsyncDisposable
+    ILogger<DuckDbProcessor> logger) : IDuckDbProcessor, IDisposable, IAsyncDisposable
 {
     private readonly PostgresOptions _postgresOptions = postgresOptions.Value;
     private readonly DuckDbOptions _duckDbOptions = duckDbOptions.Value;

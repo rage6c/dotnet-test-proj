@@ -9,7 +9,7 @@ public sealed class DbDumpService(
     IOptions<PostgresOptions> postgresOptions,
     IOptions<DuckDbOptions> duckDbOptions,
     IOptions<DumpOptions> dumpOptions,
-    DuckDbProcessor duckDbProcessor,
+    IDuckDbProcessor duckDbProcessor,
     TimeProvider timeProvider,
     ILogger<DbDumpService> logger)
 {

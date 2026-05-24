@@ -1,0 +1,32 @@
+Summary
+  Generated on: 24/5/2026 - 3:58:32 PM
+  Coverage date: 24/5/2026 - 3:58:22 PM
+  Parser: Cobertura
+  Assemblies: 1
+  Classes: 10
+  Files: 10
+  Line coverage: 100%
+  Covered lines: 269
+  Uncovered lines: 0
+  Coverable lines: 269
+  Total lines: 440
+  Branch coverage: 98.5% (67 of 68)
+  Covered branches: 67
+  Total branches: 68
+  Method coverage: 100% (44 of 44)
+  Full method coverage: 100% (44 of 44)
+  Covered methods: 44
+  Fully covered methods: 44
+  Total methods: 44
+
+PgDuckDump                                             100%
+  PgDuckDump.Configuration.DuckDbOptions               100%
+  PgDuckDump.Configuration.DumpOptions                 100%
+  PgDuckDump.Configuration.PostgresOptions             100%
+  PgDuckDump.Configuration.TableDumpOptions            100%
+  PgDuckDump.Services.DbDumpService                    100%
+  PgDuckDump.Services.DumpMonth                        100%
+  PgDuckDump.Services.InvalidConfigurationException    100%
+  PgDuckDump.Utilities.DuckDbCopyOptions               100%
+  PgDuckDump.Utilities.SqlIdentifier                   100%
+  PgDuckDump.Utilities.SqlInjectionGuard               100%

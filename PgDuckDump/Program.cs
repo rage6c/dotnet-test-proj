@@ -17,7 +17,7 @@ builder.Services.Configure<PostgresOptions>(builder.Configuration.GetSection("Po
 builder.Services.Configure<DuckDbOptions>(builder.Configuration.GetSection("DuckDb"));
 builder.Services.Configure<DumpOptions>(builder.Configuration.GetSection("Dump"));
 builder.Services.AddSingleton(TimeProvider.System);
-builder.Services.AddSingleton<DuckDbProcessor>();
+builder.Services.AddSingleton<IDuckDbProcessor, DuckDbProcessor>();
 builder.Services.AddSingleton<DbDumpService>();
 
 using var host = builder.Build();
