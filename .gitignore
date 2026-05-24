@@ -1,6 +1,16 @@
 bin/
 obj/
+.idea/
+**/.idea/
 *.duckdb
 *.duckdb.wal
 work/
 parquet-output/
+TestResults/
+**/TestResults/
+CoverageReport/
+CoverageReport*/
+**/CoverageReport/
+**/CoverageReport*/
+coverage.cobertura.xml
+**/coverage.cobertura.xml
