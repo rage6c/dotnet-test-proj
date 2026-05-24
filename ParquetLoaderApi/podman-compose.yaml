@@ -1,0 +1,22 @@
+services:
+  parquet-loader-api:
+    image: dotnet-test-proj/parquet-loader-api:latest
+    container_name: parquet-loader-api
+    build:
+      context: ..
+      dockerfile: ParquetLoaderApi/Dockerfile
+    ports:
+      - "5253:8080"
+    environment:
+      ASPNETCORE_URLS: "http://+:8080"
+      ASPNETCORE_ENVIRONMENT: "Production"
+      DOTNET_ENVIRONMENT: "Production"
+      ParquetLoader__BaseParquetPath: "/base-parquet-path"
+      LOG_FILE: "/logs/dotnet-test-proj.log"
+    volumes:
+      - parquet-loader-api-logs:/logs
+      - /Users/rage6c/Documents/dotnet-test-proj/PgDuckDump/parquet-output:/base-parquet-path:ro
+    restart: unless-stopped
+
+volumes:
+  parquet-loader-api-logs:

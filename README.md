@@ -174,6 +174,27 @@ Example:
 curl "http://localhost:5253/api/workflow?monthOfYear=202605&status=Closed&status=Resolved&excludeAssignee=blocked_user&limit=10"
 ```
 
+Container artifacts:
+
+```text
+ParquetLoaderApi/Dockerfile
+ParquetLoaderApi/entrypoint.sh
+ParquetLoaderApi/podman-compose.yaml
+```
+
+Run with Podman:
+
+```bash
+podman-compose -f ParquetLoaderApi/podman-compose.yaml up --build
+```
+
+Container paths:
+
+- Parquet data is read from `/base-parquet-path`.
+- Logs are written to `/logs/dotnet-test-proj.log`.
+- The compose file mounts `../PgDuckDump/parquet-output` to `/base-parquet-path`.
+- The compose file mounts a named volume to `/logs`.
+
 ## Coverage
 
 Run PgDuckDump coverage:
