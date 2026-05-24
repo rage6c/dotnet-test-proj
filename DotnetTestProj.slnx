@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="ParquetLoader.Tests/ParquetLoader.Tests.csproj" />
+  <Project Path="ParquetLoader/ParquetLoader.csproj" />
+  <Project Path="PgDuckDump.Tests/PgDuckDump.Tests.csproj" />
+  <Project Path="PgDuckDump/PgDuckDump.csproj" />
+</Solution>

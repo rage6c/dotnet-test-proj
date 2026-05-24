@@ -182,10 +182,19 @@ PgDuckDump/
     DumpMonth.cs
     InvalidConfigurationException.cs
   Utilities/
+    IDuckDbProcessor.cs
     DuckDbProcessor.cs
     DuckDbCopyOptions.cs
     SqlIdentifier.cs
     SqlInjectionGuard.cs
+
+PgDuckDump.Tests/
+  DbDumpServiceTests.cs
+  DumpMonthTests.cs
+  OptionsTests.cs
+  SqlIdentifierTests.cs
+  SqlInjectionGuardTests.cs
+  PgDuckDump.Tests.runsettings
 ```
 
 ## Component Responsibilities
@@ -197,8 +206,8 @@ PgDuckDump/
 - Build the generic host.
 - Resolve the environment name.
 - Load configuration.
-- Register options.
-- Register services.
+- Register options and services.
+- Register `IDuckDbProcessor` with `DuckDbProcessor`.
 - Resolve `DbDumpService`.
 - Invoke the dump workflow.
 - Return the process exit code.
@@ -221,17 +230,39 @@ PgDuckDump/
 - Build matching table-specific monthly `DELETE` statements when cleanup is enabled.
 - Build output partition paths.
 - Enforce `OverwritePartition`.
-- Call `DuckDbProcessor` for count, copy, and delete operations.
+- Call `IDuckDbProcessor` for count, copy, and delete operations.
 - Verify Parquet output before cleanup.
 - Compare exported and deleted row counts when both are available.
 - Log progress and failures.
 
-Suggested public surface:
+Current public surface:
 
 ```csharp
 public sealed class DbDumpService
 {
     public Task<int> RunAsync(CancellationToken cancellationToken);
+}
+```
+
+### `IDuckDbProcessor`
+
+`IDuckDbProcessor` is the abstraction used by `DbDumpService` for DuckDB/PostgreSQL work. It exists so dump orchestration can be unit tested without a live PostgreSQL database or DuckDB external extension.
+
+Current public surface:
+
+```csharp
+public interface IDuckDbProcessor
+{
+    void Initialize();
+
+    void CopyPostgresQueryToParquet(
+        string selectSql,
+        string outputPath,
+        DuckDbCopyOptions copyOptions);
+
+    long CountPostgresQuery(string selectSql);
+
+    long DeletePostgresRows(string deleteSql);
 }
 ```
 
@@ -248,10 +279,10 @@ public sealed class DbDumpService
 - Run `COPY` from a PostgreSQL-attached query to Parquet.
 - Run filtered PostgreSQL deletes when requested by `DbDumpService`.
 
-Suggested public surface:
+Current public surface:
 
 ```csharp
-public sealed class DuckDbProcessor : IDisposable, IAsyncDisposable
+public sealed class DuckDbProcessor : IDuckDbProcessor, IDisposable, IAsyncDisposable
 {
     public void Initialize();
 
@@ -471,8 +502,8 @@ The application must be designed for limited memory:
 - If the partition exists and `OverwritePartition` is `false`, fail before writing.
 - If the partition exists and `OverwritePartition` is `true`, delete the existing partition before writing.
 - Source rows must not be deleted unless Parquet write and output verification both succeed.
-- Per-table failures must be logged with table name and month.
-- Default behavior is stop on first table failure.
+- Runtime failures must be logged by `DbDumpService`.
+- Table failures stop the run on the first failed table.
 
 Exit codes:
 
@@ -486,7 +517,6 @@ Use `Microsoft.Extensions.Logging`.
 
 Log at minimum:
 
-- Environment name.
 - Output root.
 - Dump month.
 - Table start.
@@ -507,14 +537,40 @@ Do not log passwords, raw connection strings, or secret values.
 - Unit tests must verify generated export SQL combines the monthly date filter and configured `AdditionalWhere`, for example `updated_on` plus `status = 'Closed'` for `test.workflow`.
 - Unit tests must verify generated delete SQL targets the same quoted table and predicates as the export query.
 - Unit tests must verify unsafe `OutputName` values such as `../tbl_1`, `a/b`, `a\b`, `.`, and `..` are rejected.
-- Integration tests should cover one table/month export to `monthOfYear=yyyyMM/data.parquet`.
-- Integration tests should cover cleanup disabled and cleanup enabled behavior.
+- Unit tests must cover dump orchestration through `DbDumpService` with a fake `IDuckDbProcessor`.
+- Unit tests must cover cleanup disabled and cleanup enabled behavior.
+- Unit tests must cover successful dump, copy failure, cancellation, and deleted-row-count mismatch.
+- Unit-test coverage excludes `Program.cs` and `DuckDbProcessor.cs` because they are the console entry point and external DuckDB/PostgreSQL adapter.
+- Optional integration tests may cover one live PostgreSQL table/month export to `monthOfYear=yyyyMM/data.parquet`.
+- Optional integration tests may cover live cleanup disabled and cleanup enabled behavior.
+
+Current test command:
+
+```bash
+dotnet test PgDuckDump.Tests/PgDuckDump.Tests.csproj \
+  --settings PgDuckDump.Tests/PgDuckDump.Tests.runsettings \
+  --collect:"XPlat Code Coverage" \
+  --results-directory PgDuckDump.Tests/TestResults
+```
+
+Current coverage report location:
+
+```text
+PgDuckDump.Tests/CoverageReport/index.html
+```
+
+Current coverage target:
+
+- Line coverage: at least `90%`.
+- Branch coverage: at least `90%` where practical.
+- Method coverage: at least `90%`.
 
 ## Acceptance Criteria
 
 - Running with `DOTNET_ENVIRONMENT=Development` loads `appsettings.Development.json`.
 - `Program.cs` contains only host/bootstrap logic.
-- DuckDB setup and SQL execution live in `DuckDbProcessor`.
+- `DbDumpService` depends on `IDuckDbProcessor`, not directly on `DuckDbProcessor`.
+- DuckDB setup and SQL execution live in `DuckDbProcessor`, the production implementation of `IDuckDbProcessor`.
 - Dump orchestration and filter construction live in `DbDumpService`.
 - A table `test.workflow` dumped for May 2026 writes Parquet to:
 

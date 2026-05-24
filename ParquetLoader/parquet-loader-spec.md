@@ -60,7 +60,7 @@ The loader must not load all rows and then filter in memory.
 builder.Configuration.GetSection("ParquetLoader")
 ```
 
-`ParquetLoaderConfig` must validate the bound configuration.
+`ParquetLoaderConfig` must validate the bound configuration and normalize `BaseParquetPath` relative to `builder.Environment.ContentRootPath`.
 
 The base loader uses `ParquetLoaderConfig` and exposes `BaseParquetPath` as a protected property.
 
@@ -73,17 +73,24 @@ Path.Combine(BaseParquetPath, DatasetName)
 ## Runtime Flow
 
 1. Create a host builder with `Host.CreateApplicationBuilder`.
-2. Bind `ParquetLoaderConfig` from `builder.Configuration.GetSection("ParquetLoader")`.
-3. Register `ParquetLoaderConfig` and `WorkflowParquetLoader` in dependency injection.
-4. Build the host and resolve `WorkflowParquetLoader` from `host.Services`.
-5. Call `Load(null, 10, dto => dto.MonthOfYear == 202605 && dto.Id > 2000)`.
-6. Resolve `null` to the default workflow folder: `Path.Combine(BaseParquetPath, DatasetName)`.
-7. Translate the LINQ expression predicate into a DuckDB `WHERE` clause.
-8. Execute a DuckDB `read_parquet` query with Hive partitioning, the translated filter, and `LIMIT 10`.
-9. Map matching rows to `List<WorkflowDto>`.
-10. Log DuckDB SQL at `Debug` level before query execution.
-11. Serialize DTOs as indented camelCase JSON.
-12. Log JSON through `ILogger` at `Information` level.
+2. Resolve the project content root so `appsettings.json` and relative parquet paths behave consistently from the project folder or workspace root.
+3. Bind `ParquetLoaderConfig` from `builder.Configuration.GetSection("ParquetLoader")`.
+4. Normalize `ParquetLoaderConfig.BaseParquetPath` against `builder.Environment.ContentRootPath`.
+5. Register `ParquetLoaderConfig` and `WorkflowParquetLoader` in dependency injection.
+6. Build the host and resolve `WorkflowParquetLoader` from `host.Services`.
+7. Call `Load(null, 10, dto => dto.MonthOfYear == 202605 && dto.Id > 2000)`.
+8. Resolve `null` to the default workflow folder: `Path.Combine(BaseParquetPath, DatasetName)`.
+9. Translate the LINQ expression predicate into a DuckDB `WHERE` clause.
+10. Execute a DuckDB `read_parquet` query with Hive partitioning, the translated filter, and `LIMIT 10`.
+11. Map matching rows to `List<WorkflowDto>`.
+12. Log DuckDB SQL at `Debug` level before query execution.
+13. Serialize DTOs as indented camelCase JSON.
+14. Log JSON through `ILogger` at `Information` level.
+15. Build the second sample predicate with captured status values:
+    `row => row.MonthOfYear == 202605 && ((IEnumerable<string>)statuses).Contains(row.Status) && row.Assignee != "blocked_user"`.
+16. Call `Load(null, 10, predicate)`.
+17. Translate the captured collection to a DuckDB `IN` predicate.
+18. Execute the filtered DuckDB query, serialize the result, and log JSON through `ILogger`.
 
 ## Project Structure
 
@@ -99,6 +106,13 @@ ParquetLoader/
     WorkflowParquetLoader/
       WorkflowDto.cs
       WorkflowParquetLoader.cs
+
+ParquetLoader.Tests/
+  ParquetLoaderConfigTests.cs
+  ParquetLoaderLoadTests.cs
+  ParquetLoaderPredicateTranslationTests.cs
+  WorkflowParquetLoaderTests.cs
+  ParquetLoader.Tests.runsettings
 ```
 
 ## Loader Contract
@@ -128,6 +142,7 @@ using System.Linq.Expressions;
 using Microsoft.Extensions.Logging;
 
 public abstract class ParquetLoader<T>
+    where T : new()
 {
     public abstract string DatasetName { get; }
 
@@ -313,7 +328,7 @@ The translator must support:
 - DTO property access on either side of a comparison.
 - Constant values.
 - Captured local variables.
-- Collection membership with captured arrays or lists:
+- Collection membership with captured arrays, lists, or enumerable values:
   - `values.Contains(row.Property)`
   - `row => statuses.Contains(row.Status)`
 
@@ -340,8 +355,7 @@ Expression<Func<WorkflowDto, bool>> predicate =
 Translated SQL:
 
 ```sql
-"monthOfYear" = 202605
-AND "id" > 2000
+("monthOfYear" = 202605 AND "id" > 2000)
 ```
 
 Translation rules:
@@ -367,8 +381,7 @@ Use DuckDB `read_parquet` with recursive glob and Hive partitioning:
 ```sql
 SELECT *
 FROM read_parquet('./PgDuckDump/parquet-output/workflow/**/*.parquet', hive_partitioning = true)
-WHERE "monthOfYear" = 202605
-  AND "id" > 2000
+WHERE ("monthOfYear" = 202605 AND "id" > 2000)
 LIMIT 10;
 ```
 
@@ -389,12 +402,21 @@ The console app is a minimal runner over the workflow loader.
 Current behavior:
 
 ```csharp
-var builder = Host.CreateApplicationBuilder(args);
+var builder = Host.CreateApplicationBuilder(
+    new HostApplicationBuilderSettings
+    {
+        Args = args,
+        ContentRootPath = ResolveContentRoot()
+    });
 
 builder.Logging.ClearProviders();
 builder.Logging
     .SetMinimumLevel(LogLevel.Debug)
-    .AddSimpleConsole();
+    .AddSimpleConsole(options =>
+    {
+        options.SingleLine = false;
+        options.TimestampFormat = "yyyy-MM-dd HH:mm:ss ";
+    });
 
 builder.Services.AddSingleton(provider =>
 {
@@ -446,6 +468,8 @@ logger.LogInformation(
 logger.LogInformation("JSON output:{NewLine}{Json}", Environment.NewLine, json);
 ```
 
+`ResolveContentRoot()` must prefer the `ParquetLoader` project folder when the app is launched from either the project directory or the workspace root. This keeps `appsettings.json` loading and relative `BaseParquetPath` normalization consistent.
+
 Run command:
 
 ```bash
@@ -488,6 +512,37 @@ Example output:
 - Missing folders, folders with no `.parquet` files, missing configuration, invalid limits, unsupported predicates, mapping failures, and DuckDB failures are allowed to throw exceptions.
 - A future CLI runner may catch these exceptions and map them to explicit exit codes.
 
+## Testing Requirements
+
+- Unit tests must cover `ParquetLoaderConfig` validation and relative path normalization.
+- Unit tests must cover predicate translation for:
+  - `&&`, `||`, grouped expressions, and unary `!`
+  - equality, inequality, numeric comparisons, and null checks
+  - captured scalar values
+  - captured arrays, lists, and enumerable values used with `Contains`
+  - empty `Contains` collections
+  - unsupported method calls and unsupported expression shapes
+- Unit tests must cover loading from a generated Parquet dataset, including Hive partition columns, folder override behavior, and DuckDB `LIMIT`.
+- Unit tests must cover `WorkflowParquetLoader` metadata and DTO mapping.
+- Coverage collection uses `ParquetLoader.Tests/ParquetLoader.Tests.runsettings`.
+- `Program.cs` is excluded from coverage because it is the thin console entry point.
+- The current line coverage target is at least 80%.
+
+Suggested test command:
+
+```bash
+dotnet test ParquetLoader.Tests/ParquetLoader.Tests.csproj \
+  --settings ParquetLoader.Tests/ParquetLoader.Tests.runsettings \
+  --collect:"XPlat Code Coverage" \
+  --results-directory ParquetLoader.Tests/TestResults
+```
+
+The generated HTML coverage report is expected under:
+
+```text
+ParquetLoader.Tests/CoverageReport/index.html
+```
+
 ## Acceptance Criteria
 
 - `ParquetLoader<T>` exists as an abstract base class.
@@ -495,6 +550,7 @@ Example output:
 - `WorkflowDto` exists for the `workflow` dataset.
 - `WorkflowParquetLoader` exists and inherits `ParquetLoader<WorkflowDto>`.
 - `ParquetLoaderConfig` exists and is bound from `builder.Configuration.GetSection("ParquetLoader")`.
+- `ParquetLoaderConfig.Normalize` resolves `BaseParquetPath` against the host content root.
 - `ParquetLoader<T>` gets `BaseParquetPath` from `ParquetLoaderConfig`.
 - `DefaultFolder` is protected and defaults to `Path.Combine(BaseParquetPath, DatasetName)`.
 - `WorkflowParquetLoader` provides `DatasetName` and `ColumnMap`.
@@ -505,5 +561,9 @@ Example output:
 - The loader translates the predicate to DuckDB SQL and filters rows while loading.
 - The loader supports `&&`, `||`, `!`, grouped expressions, comparisons, null checks, and collection `Contains`.
 - The loader does not load all rows and then apply the predicate in memory.
+- `Program.cs` uses dependency injection through `Host.CreateApplicationBuilder`.
+- `Program.cs` resolves the content root before binding configuration.
 - The console app logs filtered DTOs as JSON through `ILogger`.
+- Unit tests exist for config, predicate translation, DuckDB loading, and the workflow loader.
+- Line coverage is at least 80% with `Program.cs` excluded.
 - `dotnet build` succeeds.
