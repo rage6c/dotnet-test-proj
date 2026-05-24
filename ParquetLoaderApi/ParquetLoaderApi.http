@@ -1,0 +1,11 @@
+@ParquetLoaderApi_HostAddress = http://localhost:5253
+
+GET {{ParquetLoaderApi_HostAddress}}/health
+Accept: application/json
+
+###
+
+GET {{ParquetLoaderApi_HostAddress}}/api/workflow?monthOfYear=202605&minId=2000&status=Closed&status=Resolved&excludeAssignee=blocked_user&limit=10
+Accept: application/json
+
+###
